@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
 import 'screens/splash_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/auth_service.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/transactions_screen.dart';
@@ -77,18 +81,49 @@ class ErrorApp extends StatelessWidget {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Whenever the session ends (Sign out, or the account was removed and
+    // the session could not be refreshed), return to the login screen.
+    _authSubscription = AuthService().onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedOut) {
+        _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/login',
+          (route) => false,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'CTU Kiosk Admin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(),
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),
+        '/login': (context) => const LoginScreen(),
         '/main': (context) => const MainScreen(),
       },
     );

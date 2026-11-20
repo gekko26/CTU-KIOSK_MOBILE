@@ -5,6 +5,7 @@ import '../models/admin_transaction.dart';
 import '../models/dashboard_stats.dart';
 import '../services/supabase_service.dart';
 import '../utils/taipei_time.dart';
+import '../widgets/account_button.dart';
 import '../widgets/sync_status_widget.dart';
 import 'transaction_detail_screen.dart';
 
@@ -366,6 +367,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh',
           ),
+          const AccountButton(),
         ],
       ),
       body: _isLoading

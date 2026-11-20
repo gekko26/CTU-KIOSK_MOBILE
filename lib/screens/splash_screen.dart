@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,10 +41,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Navigate to main screen after delay
-    _navigationTimer = Timer(const Duration(seconds: 3), () {
+    // After the intro, go to the app if a saved session exists,
+    // otherwise to the login screen.
+    _navigationTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/main');
+        final route = AuthService().isSignedIn ? '/main' : '/login';
+        Navigator.of(context).pushReplacementNamed(route);
       }
     });
   }
