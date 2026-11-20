@@ -12,6 +12,7 @@ import 'screens/admin_dashboard_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/transactions_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/kiosk_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -145,6 +146,7 @@ class _MainScreenState extends State<MainScreen> {
     const TransactionsScreen(),
     const ReportsScreen(),
     const SearchScreen(),
+    const KioskScreen(),
   ];
 
   @override
@@ -178,6 +180,11 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.search_outlined),
             selectedIcon: Icon(Icons.search),
             label: 'Search',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: 'Kiosk',
           ),
         ],
       ),
