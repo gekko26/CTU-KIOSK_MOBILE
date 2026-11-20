@@ -118,7 +118,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'CTU Kiosk Admin',
+      title: 'CTU Kiosk',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(),
       initialRoute: '/',

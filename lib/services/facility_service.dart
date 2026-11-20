@@ -190,13 +190,9 @@ class FacilityService {
   Future<void> updateFacility({
     required String code,
     required String name,
-    required String type,
   }) async {
     if (name.trim().isEmpty) throw FacilityException('Enter a name.');
-    if (!Facility.types.contains(type)) {
-      throw FacilityException('Choose a type.');
-    }
-    await _updateFacilityRow(code, {'name': name.trim(), 'type': type});
+    await _updateFacilityRow(code, {'name': name.trim()});
   }
 
   Future<void> setFacilityActive(String code, bool isActive) {

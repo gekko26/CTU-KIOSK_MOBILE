@@ -94,10 +94,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      child: Icon(
-                        Icons.admin_panel_settings_rounded,
-                        size: 48,
-                        color: Colors.blue.shade700,
+                      padding: const EdgeInsets.all(5),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/icon/logo.png',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),

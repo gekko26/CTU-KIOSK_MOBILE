@@ -260,7 +260,6 @@ class _KioskScreenState extends State<KioskScreen> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ActiveBadge(isActive: facility.isActive),
-                Text(Facility.typeLabel(facility.type)),
               ],
             ),
           ),
@@ -336,7 +335,6 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
   late final TextEditingController _nameController;
   final _categoryLabelController = TextEditingController();
   final _categoryPriceController = TextEditingController();
-  String? _type;
   bool _saving = false;
   String? _error;
 
@@ -348,7 +346,6 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
     final facility = widget.facility;
     _codeController = TextEditingController(text: facility?.code ?? '');
     _nameController = TextEditingController(text: facility?.name ?? '');
-    _type = Facility.types.contains(facility?.type) ? facility!.type : null;
   }
 
   @override
@@ -372,7 +369,7 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
         await service.addFacility(
           code: _codeController.text.trim(),
           name: _nameController.text,
-          type: _type!,
+          type: 'age_based',
           firstCategoryLabel: _categoryLabelController.text,
           firstCategoryPrice: FacilityService.parsePrice(
             _categoryPriceController.text,
@@ -382,7 +379,6 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
         await service.updateFacility(
           code: widget.facility!.code,
           name: _nameController.text,
-          type: _type!,
         );
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -452,32 +448,6 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
                   validator: (value) =>
                       (value ?? '').trim().isEmpty ? 'Enter a name.' : null,
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: _type,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Type'),
-                  items: [
-                    for (final type in Facility.types)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(Facility.typeLabel(type)),
-                      ),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() => _type = value),
-                  validator: (value) => value == null ? 'Choose a type.' : null,
-                ),
-                if (!_isNew &&
-                    !Facility.types.contains(widget.facility!.type)) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Current type "${widget.facility!.type}" is not supported. '
-                    'Choose one of the types above.',
-                    style: TextStyle(color: Colors.orange.shade800),
-                  ),
-                ],
                 if (_isNew) ...[
                   const SizedBox(height: 20),
                   Text(
