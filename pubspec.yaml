@@ -66,6 +66,11 @@ dependencies:
   pdf: ^3.10.0
   url_launcher: ^6.2.3
   archive: ^3.6.1
+  crypto: ^3.0.8
+  flutter_secure_storage: ^10.3.4
+  image_picker: ^1.2.4
+  vibration: ^3.2.1
+  flutter_ringtone_player: ^4.0.0+4
 
 dev_dependencies:
   flutter_test:

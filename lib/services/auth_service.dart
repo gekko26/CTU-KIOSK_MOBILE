@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'cashless_service.dart';
+
 /// Staff sign-in. There is deliberately no sign-up: accounts are created
 /// by the administrator in the Supabase dashboard (Authentication → Users).
 class AuthService {
@@ -38,6 +40,9 @@ class AuthService {
       await _auth
           .signInWithPassword(email: trimmedEmail, password: password)
           .timeout(const Duration(seconds: 20));
+      // Fresh offline-code secret on every login. Best effort: sign-in
+      // still succeeds if this fails (online approvals don't need it).
+      await CashlessService().refreshSecret();
       return null;
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -68,6 +73,8 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    // Remove the offline-code secret from this device first.
+    await CashlessService().clearSecret();
     try {
       await _auth.signOut();
     } catch (_) {

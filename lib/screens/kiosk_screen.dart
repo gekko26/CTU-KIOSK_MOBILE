@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../models/facility.dart';
+import '../services/cashless_service.dart';
 import '../services/facility_service.dart';
+import '../widgets/cashless_kiosk_cards.dart';
 import '../widgets/kiosk_widgets.dart';
 import 'facility_detail_screen.dart';
 
-/// Kiosk tab: manage the facilities the kiosk sells and their prices.
+/// Kiosk tab: QR payments switch, payment QR (admin only), and the
+/// facilities the kiosk sells and their prices.
 class KioskScreen extends StatefulWidget {
   const KioskScreen({super.key});
 
@@ -177,38 +180,68 @@ class _KioskScreenState extends State<KioskScreen> {
   }
 
   Widget _buildBody() {
+    final isAdmin = CashlessService().isAdmin;
+    final children = <Widget>[
+      const QrPaymentsSwitchCard(),
+      // Hidden entirely for the staff account (the database also refuses).
+      if (isAdmin) const PaymentQrCard(),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+        child: Text(
+          'Facilities',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ),
+    ];
+
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null && _facilities.isEmpty) {
-      return KioskErrorView(
-        title: 'Could not load facilities',
-        message: _error!,
-        onRetry: _load,
+      children.add(
+        const Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(child: CircularProgressIndicator()),
+        ),
       );
-    }
-    if (_facilities.isEmpty) {
-      return const KioskEmptyView(
-        icon: Icons.storefront_outlined,
-        title: 'No facilities yet',
-        message: 'Tap "Add facility" to create the first one.',
+    } else if (_error != null && _facilities.isEmpty) {
+      children.add(_buildInlineError(_error!, retry: true));
+    } else if (_facilities.isEmpty) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(
+                Icons.storefront_outlined,
+                size: 48,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'No facilities yet',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Tap "Add facility" to create the first one.',
+                style: TextStyle(color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+        ),
       );
+    } else {
+      if (_error != null) children.add(_buildInlineError(_error!));
+      children.addAll(_facilities.map(_buildFacilityCard));
     }
-    return ListView.builder(
+
+    return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      itemCount: _facilities.length + (_error != null ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (_error != null) {
-          if (index == 0) return _buildInlineError(_error!);
-          index -= 1;
-        }
-        return _buildFacilityCard(_facilities[index]);
-      },
+      children: children,
     );
   }
 
-  Widget _buildInlineError(String message) {
+  Widget _buildInlineError(String message, {bool retry = false}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -217,9 +250,22 @@ class _KioskScreenState extends State<KioskScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.red.shade100),
       ),
-      child: Text(
-        'Could not refresh: $message',
-        style: TextStyle(color: Colors.red.shade800),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            retry
+                ? 'Could not load facilities: $message'
+                : 'Could not refresh: $message',
+            style: TextStyle(color: Colors.red.shade800),
+          ),
+          if (retry)
+            TextButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try again'),
+            ),
+        ],
       ),
     );
   }
@@ -258,9 +304,7 @@ class _KioskScreenState extends State<KioskScreen> {
               spacing: 8,
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ActiveBadge(isActive: facility.isActive),
-              ],
+              children: [ActiveBadge(isActive: facility.isActive)],
             ),
           ),
           trailing: PopupMenuButton<String>(
