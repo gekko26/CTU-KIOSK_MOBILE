@@ -276,80 +276,89 @@ class _KioskScreenState extends State<KioskScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           boxShadow: AppTheme.softShadow,
         ),
-        child: ListTile(
-          onTap: () => _openFacility(facility),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-          leading: CircleAvatar(
-            backgroundColor: Colors.blue.shade50,
-            foregroundColor: Colors.blue.shade700,
-            child: Text(
-              facility.code,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            onTap: () => _openFacility(facility),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-          ),
-          title: Text(
-            facility.name,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [ActiveBadge(isActive: facility.isActive)],
+            contentPadding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+            leading: CircleAvatar(
+              backgroundColor: Colors.blue.shade50,
+              foregroundColor: Colors.blue.shade700,
+              child: Text(
+                facility.code,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
-          ),
-          trailing: PopupMenuButton<String>(
-            tooltip: 'Actions',
-            onSelected: (value) {
-              switch (value) {
-                case 'edit':
-                  _editFacility(facility);
-                case 'toggle':
-                  _toggleActive(facility);
-                case 'delete':
-                  _deleteFacility(facility);
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'edit',
-                child: ListTile(
-                  leading: Icon(Icons.edit_outlined),
-                  title: Text('Edit'),
-                ),
+            title: Text(
+              facility.name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [ActiveBadge(isActive: facility.isActive)],
               ),
-              PopupMenuItem(
-                value: 'toggle',
-                child: ListTile(
-                  leading: Icon(
-                    facility.isActive ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  title: Text(facility.isActive ? 'Hide' : 'Show'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: ListTile(
-                  leading: Icon(
-                    Icons.delete_outline,
-                    color: Colors.red.shade700,
-                  ),
-                  title: Text(
-                    'Delete',
-                    style: TextStyle(color: Colors.red.shade700),
+            ),
+            trailing: PopupMenuButton<String>(
+              tooltip: 'Actions',
+              onSelected: (value) {
+                switch (value) {
+                  case 'edit':
+                    _editFacility(facility);
+                  case 'toggle':
+                    _toggleActive(facility);
+                  case 'delete':
+                    _deleteFacility(facility);
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: ListTile(
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Edit'),
                   ),
                 ),
-              ),
-            ],
+                PopupMenuItem(
+                  value: 'toggle',
+                  child: ListTile(
+                    leading: Icon(
+                      facility.isActive
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                    ),
+                    title: Text(facility.isActive ? 'Hide' : 'Show'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.delete_outline,
+                      color: Colors.red.shade700,
+                    ),
+                    title: Text(
+                      'Delete',
+                      style: TextStyle(color: Colors.red.shade700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

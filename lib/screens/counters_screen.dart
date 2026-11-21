@@ -159,7 +159,6 @@ class _CountersScreenState extends State<CountersScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -169,37 +168,45 @@ class _CountersScreenState extends State<CountersScreen> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: Colors.blue.shade50,
-          foregroundColor: Colors.blue.shade700,
-          child: Text(counter.facilityCode),
-        ),
-        title: Text(
-          counter.facilityName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text('Last sequence: ${counter.lastSequence}'),
-            if (counter.updatedAt != null)
-              Text(
-                'Updated: ${DateFormat('MMM dd, yyyy hh:mm a').format(counter.updatedAt!.toLocal())}',
-              ),
-            if (counter.isDerived)
-              Text(
-                'Derived from recent transactions',
-                style: TextStyle(color: Colors.orange.shade700),
-              ),
-          ],
-        ),
-        trailing: IconButton(
-          onPressed: counter.canEdit ? () => _editCounter(counter) : null,
-          icon: const Icon(Icons.edit_outlined),
-          tooltip: counter.canEdit ? 'Edit counter' : 'Read-only counter',
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
+          leading: CircleAvatar(
+            backgroundColor: Colors.blue.shade50,
+            foregroundColor: Colors.blue.shade700,
+            child: Text(counter.facilityCode),
+          ),
+          title: Text(
+            counter.facilityName,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text('Last sequence: ${counter.lastSequence}'),
+              if (counter.updatedAt != null)
+                Text(
+                  'Updated: ${DateFormat('MMM dd, yyyy hh:mm a').format(counter.updatedAt!.toLocal())}',
+                ),
+              if (counter.isDerived)
+                Text(
+                  'Derived from recent transactions',
+                  style: TextStyle(color: Colors.orange.shade700),
+                ),
+            ],
+          ),
+          trailing: IconButton(
+            onPressed: counter.canEdit ? () => _editCounter(counter) : null,
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: counter.canEdit ? 'Edit counter' : 'Read-only counter',
+          ),
         ),
       ),
     );

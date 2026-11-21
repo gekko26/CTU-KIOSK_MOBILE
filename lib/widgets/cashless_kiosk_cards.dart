@@ -9,8 +9,9 @@ import '../screens/payments_screen.dart' show formatManilaTime;
 import '../services/cashless_service.dart';
 import 'kiosk_widgets.dart';
 
+/// Shadow + rounded corners; the white fill comes from a Material inside
+/// so ListTile ink splashes stay visible.
 BoxDecoration _cardDecoration() => BoxDecoration(
-  color: Colors.white,
   borderRadius: BorderRadius.circular(14),
   boxShadow: AppTheme.softShadow,
 );
@@ -120,32 +121,39 @@ class _QrPaymentsSwitchCardState extends State<QrPaymentsSwitchCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: _cardDecoration(),
-      child: SwitchListTile(
-        contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
-        secondary: CircleAvatar(
-          backgroundColor: Colors.green.shade50,
-          foregroundColor: Colors.green.shade700,
-          child: const Icon(Icons.qr_code_2),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: SwitchListTile(
+          contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          secondary: CircleAvatar(
+            backgroundColor: Colors.green.shade50,
+            foregroundColor: Colors.green.shade700,
+            child: const Icon(Icons.qr_code_2),
+          ),
+          title: const Text(
+            'QR payments',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            _error != null
+                ? 'Could not load: $_error'
+                : settings == null
+                ? 'Loading…'
+                : [
+                    settings.qrEnabled
+                        ? 'On — customers can pay with QR.'
+                        : 'Off — cash only.',
+                    _lastChanged(settings),
+                  ].where((s) => s.isNotEmpty).join('\n'),
+            style: _error != null
+                ? TextStyle(color: Colors.red.shade700)
+                : null,
+          ),
+          value: settings?.qrEnabled ?? false,
+          onChanged: settings == null || _saving ? null : _toggle,
         ),
-        title: const Text(
-          'QR payments',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          _error != null
-              ? 'Could not load: $_error'
-              : settings == null
-              ? 'Loading…'
-              : [
-                  settings.qrEnabled
-                      ? 'On — customers can pay with QR.'
-                      : 'Off — cash only.',
-                  _lastChanged(settings),
-                ].where((s) => s.isNotEmpty).join('\n'),
-          style: _error != null ? TextStyle(color: Colors.red.shade700) : null,
-        ),
-        value: settings?.qrEnabled ?? false,
-        onChanged: settings == null || _saving ? null : _toggle,
       ),
     );
   }
@@ -345,92 +353,111 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
     final previous = _history.where((q) => !q.isActive).toList();
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              CircleAvatar(
-                backgroundColor: Colors.purple.shade50,
-                foregroundColor: Colors.purple.shade700,
-                child: const Icon(Icons.account_balance_wallet_outlined),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Payment QR',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'Admin only',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (_error != null)
-            Text(
-              'Could not load: $_error',
-              style: TextStyle(color: Colors.red.shade700),
-            )
-          else if (active == null)
-            Text(
-              'No payment QR yet. The kiosk can\'t take QR payments until '
-              'you add one.',
-              style: TextStyle(color: Colors.grey.shade700),
-            )
-          else ...[
-            Center(child: _QrImage(path: active.imagePath, size: 200)),
-            const SizedBox(height: 8),
-            Text(
-              active.accountName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            Text(
-              'Since ${formatManilaTime(active.createdAt)}',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ],
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _loading ? null : _changeQr,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('Change QR'),
-          ),
-          if (previous.isNotEmpty)
-            Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text('Previous QRs (${previous.length})'),
+              Row(
                 children: [
-                  for (final qr in previous)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: _QrImage(path: qr.imagePath, size: 48),
-                      title: Text(qr.accountName),
-                      subtitle: Text(formatManilaTime(qr.createdAt)),
+                  CircleAvatar(
+                    backgroundColor: Colors.purple.shade50,
+                    foregroundColor: Colors.purple.shade700,
+                    child: const Icon(Icons.account_balance_wallet_outlined),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Payment QR',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Admin only',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            ),
-        ],
+              const SizedBox(height: 12),
+              if (_loading)
+                const Center(child: CircularProgressIndicator())
+              else if (_error != null)
+                Text(
+                  'Could not load: $_error',
+                  style: TextStyle(color: Colors.red.shade700),
+                )
+              else if (active == null)
+                Text(
+                  'No payment QR yet. The kiosk can\'t take QR payments until '
+                  'you add one.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                )
+              else ...[
+                Center(child: _QrImage(path: active.imagePath, size: 200)),
+                const SizedBox(height: 8),
+                Text(
+                  active.accountName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  'Since ${formatManilaTime(active.createdAt)}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _loading ? null : _changeQr,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Change QR'),
+              ),
+              if (previous.isNotEmpty)
+                Theme(
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: Text('Previous QRs (${previous.length})'),
+                    children: [
+                      for (final qr in previous)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: _QrImage(path: qr.imagePath, size: 48),
+                          title: Text(qr.accountName),
+                          subtitle: Text(formatManilaTime(qr.createdAt)),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

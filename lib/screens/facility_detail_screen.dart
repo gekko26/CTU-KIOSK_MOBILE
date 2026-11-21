@@ -278,90 +278,94 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           boxShadow: AppTheme.softShadow,
         ),
-        child: ListTile(
-          onTap: () => _editCategory(category),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-          title: Text(
-            category.label,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ActiveBadge(isActive: category.isActive),
-                Text(category.code),
-              ],
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            onTap: () => _editCategory(category),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                FacilityService.formatPrice(category.price),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryDark,
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Actions',
-                onSelected: (value) {
-                  switch (value) {
-                    case 'edit':
-                      _editCategory(category);
-                    case 'toggle':
-                      _toggleActive(category);
-                    case 'delete':
-                      _deleteCategory(category);
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: ListTile(
-                      leading: Icon(Icons.edit_outlined),
-                      title: Text('Edit'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'toggle',
-                    child: ListTile(
-                      leading: Icon(
-                        category.isActive
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      title: Text(category.isActive ? 'Hide' : 'Show'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.delete_outline,
-                        color: Colors.red.shade700,
-                      ),
-                      title: Text(
-                        'Delete',
-                        style: TextStyle(color: Colors.red.shade700),
-                      ),
-                    ),
-                  ),
+            contentPadding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+            title: Text(
+              category.label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  ActiveBadge(isActive: category.isActive),
+                  Text(category.code),
                 ],
               ),
-            ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  FacilityService.formatPrice(category.price),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryDark,
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Actions',
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'edit':
+                        _editCategory(category);
+                      case 'toggle':
+                        _toggleActive(category);
+                      case 'delete':
+                        _deleteCategory(category);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('Edit'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'toggle',
+                      child: ListTile(
+                        leading: Icon(
+                          category.isActive
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        title: Text(category.isActive ? 'Hide' : 'Show'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.delete_outline,
+                          color: Colors.red.shade700,
+                        ),
+                        title: Text(
+                          'Delete',
+                          style: TextStyle(color: Colors.red.shade700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

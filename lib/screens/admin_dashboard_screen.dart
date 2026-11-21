@@ -517,42 +517,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          childAspectRatio: 1.45,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          children: [
-            _buildMetricCard(
-              label: 'Total Sales',
-              value: 'P${NumberFormat('#,##0.00').format(_stats.totalSales)}',
-              subtitle: 'Gross paid amount',
-              icon: Icons.payments_outlined,
-            ),
-            _buildMetricCard(
-              label: 'Transactions',
-              value: '${_stats.transactionCount}',
-              subtitle: 'Completed rows in period',
-              icon: Icons.receipt_long_outlined,
-            ),
-            _buildMetricCard(
-              label: 'Units Sold',
-              value: '${_stats.totalUnits}',
-              subtitle: 'Total ticket units',
-              icon: Icons.confirmation_number_outlined,
-            ),
-            _buildMetricCard(
-              label: 'Avg Duration',
-              value: _formatDuration(_stats.averageDurationMs),
-              subtitle: 'Payment session time',
-              icon: Icons.timer_outlined,
-            ),
-          ],
-        ),
+        // Rows of two cards sized by their content (a fixed aspect ratio
+        // overflowed on narrow phones / large system font sizes).
+        _buildMetricRows([
+          _buildMetricCard(
+            label: 'Total Sales',
+            value: 'P${NumberFormat('#,##0.00').format(_stats.totalSales)}',
+            subtitle: 'Gross paid amount',
+            icon: Icons.payments_outlined,
+          ),
+          _buildMetricCard(
+            label: 'Transactions',
+            value: '${_stats.transactionCount}',
+            subtitle: 'Completed rows in period',
+            icon: Icons.receipt_long_outlined,
+          ),
+          _buildMetricCard(
+            label: 'Units Sold',
+            value: '${_stats.totalUnits}',
+            subtitle: 'Total ticket units',
+            icon: Icons.confirmation_number_outlined,
+          ),
+          _buildMetricCard(
+            label: 'Avg Duration',
+            value: _formatDuration(_stats.averageDurationMs),
+            subtitle: 'Payment session time',
+            icon: Icons.timer_outlined,
+          ),
+        ]),
       ],
     );
+  }
+
+  Widget _buildMetricRows(List<Widget> cards) {
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += 2) {
+      if (i > 0) rows.add(const SizedBox(height: 12));
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: cards[i]),
+              const SizedBox(width: 12),
+              Expanded(
+                child: i + 1 < cards.length ? cards[i + 1] : const SizedBox(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(children: rows);
   }
 
   Widget _buildMetricCard({
@@ -578,7 +594,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: Colors.blue.shade700, size: 26),
-          const Spacer(),
+          const SizedBox(height: 12),
           Text(
             label,
             style: TextStyle(
@@ -588,12 +604,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade900,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade900,
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -633,7 +654,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -643,43 +663,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      child: ListTile(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => TransactionDetailScreen(transaction: transaction),
-            ),
-          );
-        },
-        leading: CircleAvatar(
-          backgroundColor: Colors.blue.shade50,
-          foregroundColor: Colors.blue.shade700,
-          child: Text('${transaction.totalUnits}'),
-        ),
-        title: Text(
-          transaction.displayLabel,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Text(
-          '${transaction.facilityName}  •  ${DateFormat('MMM dd, yyyy hh:mm a').format(completedAt)}',
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'P${NumberFormat('#,##0.00').format(transaction.amountPaid)}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    TransactionDetailScreen(transaction: transaction),
               ),
-            ),
-            Text(
-              '${transaction.totalUnits} unit${transaction.totalUnits == 1 ? '' : 's'}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ],
+            );
+          },
+          leading: CircleAvatar(
+            backgroundColor: Colors.blue.shade50,
+            foregroundColor: Colors.blue.shade700,
+            child: Text('${transaction.totalUnits}'),
+          ),
+          title: Text(
+            transaction.displayLabel,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            '${transaction.facilityName}  •  ${DateFormat('MMM dd, yyyy hh:mm a').format(completedAt)}',
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'P${NumberFormat('#,##0.00').format(transaction.amountPaid)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              Text(
+                '${transaction.totalUnits} unit${transaction.totalUnits == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
         ),
       ),
     );
