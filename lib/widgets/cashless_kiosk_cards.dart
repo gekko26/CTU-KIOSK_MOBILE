@@ -6,7 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_theme.dart';
 import '../screens/payments_screen.dart' show formatManilaTime;
+import '../services/admin_rpc.dart';
 import '../services/cashless_service.dart';
+import 'admin_pin_dialog.dart';
 import 'kiosk_widgets.dart';
 
 /// Shadow + rounded corners; the white fill comes from a Material inside
@@ -174,8 +176,14 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
   final CashlessService _service = CashlessService();
   RealtimeChannel? _channel;
   List<KioskQr> _history = const [];
+  QrChangeStatus? _status;
+  String? _statusError;
   bool _loading = true;
+  bool _busy = false;
   String? _error;
+
+  /// Null while unknown; "Change QR" stays disabled until it is known.
+  bool get _changeAllowed => _status?.allowed == true;
 
   KioskQr? get _active {
     for (final qr in _history) {
@@ -199,6 +207,10 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
   }
 
   Future<void> _load() async {
+    await Future.wait([_loadHistory(), _loadStatus()]);
+  }
+
+  Future<void> _loadHistory() async {
     try {
       final history = await _service.qrHistory();
       if (!mounted) return;
@@ -216,7 +228,48 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
     }
   }
 
+  Future<void> _loadStatus() async {
+    try {
+      final status = await _service.qrChangeStatus();
+      if (!mounted) return;
+      setState(() {
+        _status = status;
+        _statusError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _status = null;
+        _statusError = CashlessService.errorMessage(error);
+      });
+    }
+  }
+
+  String _nextAllowedText(DateTime? next) => next == null
+      ? 'The payment QR can only be changed once every 7 days.'
+      : 'Next change allowed on ${formatManilaDateTime(next)} (Manila time).';
+
   Future<void> _changeQr() async {
+    // Re-check the 7-day cooldown before picking/uploading anything.
+    await _loadStatus();
+    if (!mounted) return;
+    if (!_changeAllowed) {
+      if (_status != null) {
+        await showKioskMessage(
+          context,
+          title: 'QR can’t be changed yet',
+          message: _nextAllowedText(_status!.nextAllowedAt),
+        );
+      } else {
+        showKioskSnack(
+          context,
+          _statusError ?? 'Could not check when the QR can be changed.',
+          error: true,
+        );
+      }
+      return;
+    }
+
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       showDragHandle: true,
@@ -294,7 +347,8 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
         content: Text(
           'All QR payments will go to this account:\n\n$accountName\n\n'
           'The kiosk shows the new QR right away. Check that the account '
-          'name matches the bank app.',
+          'name matches the bank app.\n\n'
+          'You won’t be able to change the QR again for 7 days.',
         ),
         actions: [
           TextButton(
@@ -310,6 +364,7 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
     );
     if (confirmed != true || !mounted) return;
 
+    setState(() => _busy = true);
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -326,24 +381,66 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
         ),
       ),
     );
+
+    // 1. Upload (no PIN needed; the file does nothing until activated).
+    final String path;
     try {
-      await _service.changeQr(
+      path = await _service.uploadQrImage(
         bytes: bytes,
         contentType: contentType,
-        accountName: accountName,
       );
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      showKioskSnack(context, 'Payment QR changed to $accountName.');
     } catch (error) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      await showKioskMessage(
-        context,
-        title: 'QR not changed',
-        message: CashlessService.errorMessage(error),
-      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        setState(() => _busy = false);
+        await showKioskMessage(
+          context,
+          title: 'QR not changed',
+          message: CashlessService.errorMessage(error),
+        );
+      }
+      return;
     }
+    if (!mounted) {
+      await _service.removeQrUpload(path);
+      return;
+    }
+    Navigator.of(context).pop();
+
+    // 2. PIN, then set_active_qr. Any failure removes the upload.
+    try {
+      await runWithAdminPin<KioskQr>(
+        context,
+        title: 'Enter admin PIN',
+        message: 'Confirm the new payment QR for $accountName.',
+        confirmLabel: 'Change QR',
+        action: (pin) => _service.activateQr(
+          imagePath: path,
+          accountName: accountName,
+          pin: pin,
+        ),
+      );
+      if (mounted) {
+        showKioskSnack(context, 'Payment QR changed to $accountName.');
+      }
+    } on PinCancelledException {
+      await _service.removeQrUpload(path);
+      if (mounted) showKioskSnack(context, 'QR not changed.');
+    } catch (error) {
+      await _service.removeQrUpload(path);
+      if (mounted) {
+        await showKioskMessage(
+          context,
+          title:
+              error is AdminRpcException &&
+                  error.code == AdminRpcCode.qrCooldown
+              ? 'QR can’t be changed yet'
+              : 'QR not changed',
+          message: CashlessService.errorMessage(error),
+        );
+      }
+    }
+    if (mounted) setState(() => _busy = false);
     await _load();
   }
 
@@ -432,10 +529,36 @@ class _PaymentQrCardState extends State<PaymentQrCard> {
               ],
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: _loading ? null : _changeQr,
+                onPressed: _loading || _busy || !_changeAllowed
+                    ? null
+                    : _changeQr,
                 icon: const Icon(Icons.qr_code_scanner),
                 label: const Text('Change QR'),
               ),
+              if (!_loading && _status != null && !_status!.allowed)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _nextAllowedText(_status!.nextAllowedAt),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                )
+              else if (!_loading && _statusError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: TextButton.icon(
+                    onPressed: _loadStatus,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: Text(
+                      'Could not check when the QR can be changed. Retry',
+                      style: TextStyle(color: Colors.red.shade700),
+                    ),
+                  ),
+                ),
               if (previous.isNotEmpty)
                 Theme(
                   data: Theme.of(

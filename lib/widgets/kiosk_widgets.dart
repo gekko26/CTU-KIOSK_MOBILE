@@ -200,3 +200,33 @@ Future<void> showKioskMessage(
     ),
   );
 }
+
+/// Shown to the staff account: facilities and prices are read-only.
+class ViewOnlyNote extends StatelessWidget {
+  const ViewOnlyNote({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.visibility_outlined, color: Colors.grey.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'View only. Only the admin account can change facilities '
+              'and prices.',
+              style: TextStyle(color: Colors.grey.shade800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

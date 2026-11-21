@@ -13,7 +13,6 @@ class TicketCounter {
   final DateTime? updatedAt;
   final bool isDerived;
 
-  bool get canEdit => !isDerived;
 
   TicketCounter copyWith({
     String? facilityCode,

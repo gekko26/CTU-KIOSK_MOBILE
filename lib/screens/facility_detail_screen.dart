@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../models/facility.dart';
+import '../services/admin_rpc.dart';
+import '../services/cashless_service.dart';
 import '../services/facility_service.dart';
+import '../widgets/admin_pin_dialog.dart';
 import '../widgets/kiosk_widgets.dart';
 
 /// Categories and prices of one facility.
@@ -22,6 +25,9 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   String? _error;
 
   Facility get _facility => widget.facility;
+
+  /// Staff sees a read-only list; the database refuses their edits anyway.
+  bool get _isAdmin => CashlessService().isAdmin;
 
   @override
   void initState() {
@@ -70,14 +76,27 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     return true;
   }
 
-  Future<void> _runAction(
-    Future<void> Function() action,
-    String successMessage,
-  ) async {
+  /// Runs the server-side checks in [precheck] (no PIN used), then asks
+  /// for the admin PIN and runs [action] with it, then reloads.
+  Future<void> _runPinAction({
+    required String pinMessage,
+    Future<void> Function()? precheck,
+    required Future<void> Function(String pin) action,
+    required String successMessage,
+  }) async {
     try {
-      await action();
+      if (precheck != null) await precheck();
+      if (!mounted) return;
+      await runWithAdminPin<void>(
+        context,
+        title: 'Enter admin PIN',
+        message: pinMessage,
+        action: action,
+      );
       if (!mounted) return;
       showKioskSnack(context, successMessage);
+    } on PinCancelledException {
+      return;
     } catch (error) {
       if (!mounted) return;
       final message = FacilityService.errorMessage(error);
@@ -125,9 +144,15 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   Future<void> _toggleActive(FacilityCategory category) async {
     final show = !category.isActive;
     if (!show && await _blockIfLastActive(category)) return;
-    await _runAction(
-      () => _service.setCategoryActive(_facility.code, category.code, show),
-      show ? '${category.label} is now shown.' : '${category.label} is hidden.',
+    await _runPinAction(
+      pinMessage: show
+          ? 'Show ${category.label} on the kiosk.'
+          : 'Hide ${category.label}.',
+      precheck: show ? null : () => _service.checkCanRemoveCategory(category),
+      action: (pin) => _service.setCategoryActive(category, show, pin),
+      successMessage: show
+          ? '${category.label} is now shown.'
+          : '${category.label} is hidden.',
     );
   }
 
@@ -155,9 +180,11 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
       ),
     );
     if (confirmed != true) return;
-    await _runAction(
-      () => _service.deleteCategory(_facility.code, category.code),
-      '${category.label} deleted.',
+    await _runPinAction(
+      pinMessage: 'Delete ${category.label}.',
+      precheck: () => _service.checkCanRemoveCategory(category),
+      action: (pin) => _service.deleteCategory(category, pin),
+      successMessage: '${category.label} deleted.',
     );
   }
 
@@ -177,11 +204,13 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isLoading ? null : _addCategory,
-        icon: const Icon(Icons.add),
-        label: const Text('Add category'),
-      ),
+      floatingActionButton: _isAdmin
+          ? FloatingActionButton.extended(
+              onPressed: _isLoading ? null : _addCategory,
+              icon: const Icon(Icons.add),
+              label: const Text('Add category'),
+            )
+          : null,
       body: Column(
         children: [
           const KioskSyncNote(),
@@ -228,16 +257,19 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
       );
     }
     if (_categories.isEmpty) {
-      return const KioskEmptyView(
+      return KioskEmptyView(
         icon: Icons.sell_outlined,
         title: 'No categories yet',
-        message: 'Tap "Add category" to add a price.',
+        message: _isAdmin
+            ? 'Tap "Add category" to add a price.'
+            : 'The admin hasn\'t added any prices yet.',
       );
     }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       children: [
+        if (!_isAdmin) const ViewOnlyNote(),
         if (_error != null)
           Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -286,7 +318,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: ListTile(
-            onTap: () => _editCategory(category),
+            onTap: _isAdmin ? () => _editCategory(category) : null,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
@@ -318,52 +350,53 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                     color: AppTheme.primaryDark,
                   ),
                 ),
-                PopupMenuButton<String>(
-                  tooltip: 'Actions',
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'edit':
-                        _editCategory(category);
-                      case 'toggle':
-                        _toggleActive(category);
-                      case 'delete':
-                        _deleteCategory(category);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: ListTile(
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('Edit'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'toggle',
-                      child: ListTile(
-                        leading: Icon(
-                          category.isActive
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                        ),
-                        title: Text(category.isActive ? 'Hide' : 'Show'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.delete_outline,
-                          color: Colors.red.shade700,
-                        ),
-                        title: Text(
-                          'Delete',
-                          style: TextStyle(color: Colors.red.shade700),
+                if (_isAdmin)
+                  PopupMenuButton<String>(
+                    tooltip: 'Actions',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editCategory(category);
+                        case 'toggle':
+                          _toggleActive(category);
+                        case 'delete':
+                          _deleteCategory(category);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Edit'),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      PopupMenuItem(
+                        value: 'toggle',
+                        child: ListTile(
+                          leading: Icon(
+                            category.isActive
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          title: Text(category.isActive ? 'Hide' : 'Show'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.delete_outline,
+                            color: Colors.red.shade700,
+                          ),
+                          title: Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -446,7 +479,7 @@ class _CategoryFormDialogState extends State<CategoryFormDialog> {
           ],
         ),
       );
-      if (confirmed != true) return;
+      if (confirmed != true || !mounted) return;
     }
 
     setState(() {
@@ -454,22 +487,34 @@ class _CategoryFormDialogState extends State<CategoryFormDialog> {
       _error = null;
     });
     final service = FacilityService();
+    final label = _labelController.text;
     try {
-      if (category == null) {
-        await service.addCategory(
-          facilityCode: widget.facilityCode,
-          label: _labelController.text,
-          price: price,
-        );
-      } else {
-        await service.updateCategory(
-          facilityCode: widget.facilityCode,
-          code: category.code,
-          label: _labelController.text,
-          price: price,
-        );
-      }
+      await runWithAdminPin<void>(
+        context,
+        title: 'Enter admin PIN',
+        message: category == null
+            ? 'Add ${label.trim()} at ${FacilityService.formatPrice(price)}.'
+            : 'Save ${label.trim()} at ${FacilityService.formatPrice(price)}.',
+        action: (pin) {
+          if (category == null) {
+            return service.addCategory(
+              facilityCode: widget.facilityCode,
+              label: label,
+              price: price,
+              pin: pin,
+            );
+          }
+          return service.updateCategory(
+            category: category,
+            label: label,
+            price: price,
+            pin: pin,
+          );
+        },
+      );
       if (mounted) Navigator.of(context).pop(true);
+    } on PinCancelledException {
+      if (mounted) setState(() => _saving = false);
     } catch (error) {
       if (!mounted) return;
       setState(() {

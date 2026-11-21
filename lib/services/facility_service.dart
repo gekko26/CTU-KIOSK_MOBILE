@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/facility.dart';
+import 'admin_rpc.dart';
 
-/// Reads and edits the kiosk's `facilities` and `facility_categories`
-/// tables. The kiosk polls these tables, so edits reach it within minutes.
+/// Reads the kiosk's `facilities` and `facility_categories` tables and edits
+/// them through the PIN-protected admin RPCs. The kiosk polls these tables,
+/// so edits reach it within minutes.
 class FacilityService {
   FacilityService._internal();
 
@@ -67,6 +69,8 @@ class FacilityService {
 
   /// Turns any error into text for the user, keeping Supabase's own message.
   static String errorMessage(Object error) {
+    if (error is AdminRpcException) return error.userMessage;
+    if (error is PinCancelledException) return 'Cancelled.';
     if (error is PostgrestException) {
       final parts = <String>[error.message];
       if (error.details != null && '${error.details}'.isNotEmpty) {
@@ -101,11 +105,12 @@ class FacilityService {
     return error.toString();
   }
 
-  String get _now => DateTime.now().toUtc().toIso8601String();
-
   // ---------------------------------------------------------------------------
   // Facilities
   // ---------------------------------------------------------------------------
+  //
+  // Reads use the tables directly. Every write goes through a PIN-protected
+  // admin RPC (docs/admin-pin.md §4); direct writes are refused by RLS.
 
   Future<List<Facility>> getFacilities() async {
     final rows = await _client
@@ -117,29 +122,62 @@ class FacilityService {
     return rows.map(Facility.fromMap).toList();
   }
 
-  /// Creates a facility together with its first category. If the category
-  /// can't be saved, the new facility is removed again so the kiosk never
-  /// sees a facility without prices.
-  Future<void> addFacility({
+  Future<Map<String, dynamic>> _upsertFacility({
+    required String code,
+    required String name,
+    required String type,
+    required bool isActive,
+    required int? sortOrder,
+    required String pin,
+  }) {
+    return callAdminRpc('admin_upsert_facility', {
+      'p_code': code,
+      'p_name': name,
+      'p_type': type,
+      'p_is_active': isActive,
+      'p_sort_order': sortOrder,
+      'p_pin': pin,
+    });
+  }
+
+  /// Checks the new facility's fields before the PIN is asked for.
+  /// Throws [FacilityException] with the first problem.
+  void validateNewFacility({
     required String code,
     required String name,
     required String type,
     required String firstCategoryLabel,
     required num firstCategoryPrice,
-  }) async {
+  }) {
     final codeError = validateFacilityCode(code);
     if (codeError != null) throw FacilityException(codeError);
     if (name.trim().isEmpty) throw FacilityException('Enter a name.');
     if (!Facility.types.contains(type)) {
       throw FacilityException('Choose a type.');
     }
-    final categoryRow = _newCategoryRow(
-      facilityCode: code,
-      label: firstCategoryLabel,
-      price: firstCategoryPrice,
-      sortOrder: 1,
+    _checkCategoryFields(firstCategoryLabel, firstCategoryPrice);
+  }
+
+  /// Creates a facility together with its first category (one PIN for
+  /// both). If the category can't be saved, the new facility is deleted
+  /// again so the kiosk never sees a facility without prices.
+  Future<void> addFacility({
+    required String code,
+    required String name,
+    required String type,
+    required String firstCategoryLabel,
+    required num firstCategoryPrice,
+    required String pin,
+  }) async {
+    validateNewFacility(
+      code: code,
+      name: name,
+      type: type,
+      firstCategoryLabel: firstCategoryLabel,
+      firstCategoryPrice: firstCategoryPrice,
     );
 
+    // "Upsert" would overwrite an existing facility, so check first.
     final existing = await _client
         .from(_facilitiesTable)
         .select('code, sort_order')
@@ -152,30 +190,31 @@ class FacilityService {
         ? 0
         : (existing.first['sort_order'] as num?)?.toInt() ?? 0;
 
-    await _client
-        .from(_facilitiesTable)
-        .insert({
-          'code': code,
-          'name': name.trim(),
-          'type': type,
-          'is_active': true,
-          'sort_order': maxOrder + 1,
-          'updated_at': _now,
-        })
-        .timeout(_timeout);
+    await _upsertFacility(
+      code: code,
+      name: name.trim(),
+      type: type,
+      isActive: true,
+      sortOrder: maxOrder + 1,
+      pin: pin,
+    );
 
     try {
-      await _client
-          .from(_categoriesTable)
-          .insert(categoryRow)
-          .timeout(_timeout);
+      await _upsertCategory(
+        facilityCode: code,
+        code: categoryCodeFromLabel(firstCategoryLabel),
+        label: firstCategoryLabel.trim(),
+        price: firstCategoryPrice,
+        isActive: true,
+        sortOrder: 1,
+        pin: pin,
+      );
     } catch (error) {
       try {
-        await _client
-            .from(_facilitiesTable)
-            .delete()
-            .eq('code', code)
-            .timeout(_timeout);
+        await callAdminRpc('admin_delete_facility', {
+          'p_code': code,
+          'p_pin': pin,
+        });
       } catch (_) {
         throw FacilityException(
           'Facility $code was created but its first category could not be '
@@ -188,47 +227,40 @@ class FacilityService {
   }
 
   Future<void> updateFacility({
-    required String code,
+    required Facility facility,
     required String name,
+    required String pin,
   }) async {
     if (name.trim().isEmpty) throw FacilityException('Enter a name.');
-    await _updateFacilityRow(code, {'name': name.trim()});
+    await _upsertFacility(
+      code: facility.code,
+      name: name.trim(),
+      type: facility.type,
+      isActive: facility.isActive,
+      sortOrder: facility.sortOrder,
+      pin: pin,
+    );
   }
 
-  Future<void> setFacilityActive(String code, bool isActive) {
-    return _updateFacilityRow(code, {'is_active': isActive});
-  }
-
-  Future<void> _updateFacilityRow(
-    String code,
-    Map<String, dynamic> values,
+  /// Show (true) or hide (false) a facility.
+  Future<void> setFacilityActive(
+    Facility facility,
+    bool isActive,
+    String pin,
   ) async {
-    final rows = await _client
-        .from(_facilitiesTable)
-        .update({...values, 'updated_at': _now})
-        .eq('code', code)
-        .select('code')
-        .timeout(_timeout);
-    if (rows.isEmpty) {
-      throw FacilityException(
-        'Facility $code was not found. It may have been deleted.',
-      );
-    }
+    await _upsertFacility(
+      code: facility.code,
+      name: facility.name,
+      type: facility.type,
+      isActive: isActive,
+      sortOrder: facility.sortOrder,
+      pin: pin,
+    );
   }
 
-  /// Deletes the facility; its categories are removed by the cascade.
-  Future<void> deleteFacility(String code) async {
-    final rows = await _client
-        .from(_facilitiesTable)
-        .delete()
-        .eq('code', code)
-        .select('code')
-        .timeout(_timeout);
-    if (rows.isEmpty) {
-      throw FacilityException(
-        'Facility $code was not deleted. It may already be gone.',
-      );
-    }
+  /// Deletes the facility and its categories (done by the RPC).
+  Future<void> deleteFacility(String code, String pin) async {
+    await callAdminRpc('admin_delete_facility', {'p_code': code, 'p_pin': pin});
   }
 
   // ---------------------------------------------------------------------------
@@ -246,47 +278,49 @@ class FacilityService {
     return rows.map(FacilityCategory.fromMap).toList();
   }
 
-  /// Builds a validated insert row for a new category.
-  Map<String, dynamic> _newCategoryRow({
+  Future<Map<String, dynamic>> _upsertCategory({
     required String facilityCode,
+    required String code,
     required String label,
     required num price,
-    required int sortOrder,
+    required bool isActive,
+    required int? sortOrder,
+    required String pin,
   }) {
+    return callAdminRpc('admin_upsert_category', {
+      'p_facility_code': facilityCode,
+      'p_code': code,
+      'p_label': label,
+      'p_price': price,
+      'p_is_active': isActive,
+      'p_sort_order': sortOrder,
+      'p_pin': pin,
+    });
+  }
+
+  /// Label and price checks shared by add and edit.
+  void _checkCategoryFields(String label, num price) {
     final trimmed = label.trim();
     if (trimmed.isEmpty) throw FacilityException('Enter a category label.');
-    final code = categoryCodeFromLabel(trimmed);
-    if (code.isEmpty) {
+    if (categoryCodeFromLabel(trimmed).isEmpty) {
       throw FacilityException(
         'The category label needs at least one letter or digit.',
       );
     }
     final priceError = validatePrice(price);
     if (priceError != null) throw FacilityException(priceError);
-    return {
-      'facility_code': facilityCode,
-      'code': code,
-      'label': trimmed,
-      'price': price,
-      'is_active': true,
-      'sort_order': sortOrder,
-      'updated_at': _now,
-    };
   }
 
   Future<void> addCategory({
     required String facilityCode,
     required String label,
     required num price,
+    required String pin,
   }) async {
-    final row = _newCategoryRow(
-      facilityCode: facilityCode,
-      label: label,
-      price: price,
-      sortOrder: 0,
-    );
-    final code = row['code'] as String;
+    _checkCategoryFields(label, price);
+    final code = categoryCodeFromLabel(label);
 
+    // "Upsert" would overwrite an existing category, so check first.
     final existing = await _client
         .from(_categoriesTable)
         .select('code, sort_order')
@@ -298,11 +332,19 @@ class FacilityService {
         'A category with code "$code" already exists in this facility.',
       );
     }
-    row['sort_order'] = existing.isEmpty
+    final sortOrder = existing.isEmpty
         ? 1
         : ((existing.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
 
-    await _client.from(_categoriesTable).insert(row).timeout(_timeout);
+    await _upsertCategory(
+      facilityCode: facilityCode,
+      code: code,
+      label: label.trim(),
+      price: price,
+      isActive: true,
+      sortOrder: sortOrder,
+      pin: pin,
+    );
   }
 
   /// Message shown when the last active category of an active facility
@@ -338,73 +380,56 @@ class FacilityService {
     }
   }
 
+  /// Checks a hide/delete against the server before the PIN is asked for.
+  Future<void> checkCanRemoveCategory(FacilityCategory category) async {
+    // Removing an already-hidden category never changes what the kiosk sells.
+    if (!category.isActive) return;
+    await _ensureNotLastActiveCategory(category.facilityCode, category.code);
+  }
+
   Future<void> updateCategory({
-    required String facilityCode,
-    required String code,
+    required FacilityCategory category,
     required String label,
     required num price,
+    required String pin,
   }) async {
     if (label.trim().isEmpty) throw FacilityException('Enter a label.');
     final priceError = validatePrice(price);
     if (priceError != null) throw FacilityException(priceError);
-    await _updateCategoryRow(facilityCode, code, {
-      'label': label.trim(),
-      'price': price,
-    });
+    await _upsertCategory(
+      facilityCode: category.facilityCode,
+      code: category.code,
+      label: label.trim(),
+      price: price,
+      isActive: category.isActive,
+      sortOrder: category.sortOrder,
+      pin: pin,
+    );
   }
 
+  /// Show (true) or hide (false) a category.
   Future<void> setCategoryActive(
-    String facilityCode,
-    String code,
+    FacilityCategory category,
     bool isActive,
+    String pin,
   ) async {
-    if (!isActive) await _ensureNotLastActiveCategory(facilityCode, code);
-    await _updateCategoryRow(facilityCode, code, {'is_active': isActive});
+    await _upsertCategory(
+      facilityCode: category.facilityCode,
+      code: category.code,
+      label: category.label,
+      price: category.price,
+      isActive: isActive,
+      sortOrder: category.sortOrder,
+      pin: pin,
+    );
   }
 
-  Future<void> _updateCategoryRow(
-    String facilityCode,
-    String code,
-    Map<String, dynamic> values,
-  ) async {
-    final rows = await _client
-        .from(_categoriesTable)
-        .update({...values, 'updated_at': _now})
-        .eq('facility_code', facilityCode)
-        .eq('code', code)
-        .select('code')
-        .timeout(_timeout);
-    if (rows.isEmpty) {
-      throw FacilityException(
-        'Category "$code" was not found. It may have been deleted.',
-      );
-    }
-  }
-
-  Future<void> deleteCategory(String facilityCode, String code) async {
-    final current = await _client
-        .from(_categoriesTable)
-        .select('is_active')
-        .eq('facility_code', facilityCode)
-        .eq('code', code)
-        .maybeSingle()
-        .timeout(_timeout);
-    // Deleting an already-hidden category never changes what the kiosk sells.
-    if (current != null && current['is_active'] != false) {
-      await _ensureNotLastActiveCategory(facilityCode, code);
-    }
-    final rows = await _client
-        .from(_categoriesTable)
-        .delete()
-        .eq('facility_code', facilityCode)
-        .eq('code', code)
-        .select('code')
-        .timeout(_timeout);
-    if (rows.isEmpty) {
-      throw FacilityException(
-        'Category "$code" was not deleted. It may already be gone.',
-      );
-    }
+  Future<void> deleteCategory(FacilityCategory category, String pin) async {
+    await callAdminRpc('admin_delete_category', {
+      'p_facility_code': category.facilityCode,
+      'p_code': category.code,
+      'p_pin': pin,
+    });
   }
 }
 

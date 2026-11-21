@@ -371,22 +371,8 @@ class SupabaseService {
     }
   }
 
-  Future<void> updateTicketCounter(TicketCounter counter) async {
-    if (!_countersTableAvailable) {
-      throw StateError(
-        'ticket_counters is not available in this Supabase project. Add the table before editing counters.',
-      );
-    }
-
-    await _client
-        .from(_countersTable)
-        .upsert(
-          counter.copyWith(updatedAt: DateTime.now().toUtc()).toJson(),
-          onConflict: 'facility_code',
-        );
-
-    _markRefreshSuccess();
-  }
+  // ticket_counters is read-only for the app (only the kiosk writes it;
+  // the database moves a facility's counter when it is added or renamed).
 
   Future<List<TicketCounter>> _deriveTicketCounters() async {
     final response = await _client

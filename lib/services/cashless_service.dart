@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/cashless_request.dart';
+import 'admin_rpc.dart';
 
 /// Thrown by [CashlessService.review] when the request was already approved,
 /// rejected or completed by someone else (or by an offline code on the kiosk).
@@ -55,6 +56,26 @@ class KioskQr {
     isActive: json['is_active'] as bool? ?? false,
     createdAt:
         DateTime.tryParse('${json['created_at']}')?.toUtc() ?? DateTime.now(),
+  );
+}
+
+/// Result of `qr_change_status()`: the payment QR may be changed once every
+/// 7 days.
+class QrChangeStatus {
+  final bool allowed;
+  final DateTime? nextAllowedAt;
+  final bool overridePending;
+
+  const QrChangeStatus({
+    required this.allowed,
+    required this.nextAllowedAt,
+    required this.overridePending,
+  });
+
+  factory QrChangeStatus.fromJson(Map<String, dynamic> json) => QrChangeStatus(
+    allowed: json['allowed'] == true,
+    nextAllowedAt: DateTime.tryParse('${json['next_allowed_at']}')?.toUtc(),
+    overridePending: json['override_pending'] == true,
   );
 }
 
@@ -275,42 +296,55 @@ class CashlessService {
     return null;
   }
 
-  /// Uploads the image to `kiosk-assets/qr/<timestamp>-<random>.<ext>`, then
-  /// makes it the kiosk's active QR. Removes the upload if activation fails.
-  Future<KioskQr> changeQr({
+  /// Whether the QR may be changed now (7-day cooldown). Any signed-in
+  /// user, no PIN. Returned directly, not wrapped in `{ok, code}`.
+  Future<QrChangeStatus> qrChangeStatus() async {
+    final raw = await _client.rpc('qr_change_status').timeout(_timeout);
+    return QrChangeStatus.fromJson(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Uploads the image to `kiosk-assets/qr/<timestamp>-<random>.<ext>` (a
+  /// new unique name every time, never upsert) and returns its path. The
+  /// file does nothing until [activateQr] points at it.
+  Future<String> uploadQrImage({
     required Uint8List bytes,
     required String contentType,
-    required String accountName,
   }) async {
     final ext = contentType == 'image/png' ? 'png' : 'jpg';
     final path =
         'qr/${DateTime.now().millisecondsSinceEpoch}-${_randomHex(8)}.$ext';
-    final bucket = _client.storage.from(assetsBucket);
-
-    await bucket
+    await _client.storage
+        .from(assetsBucket)
         .uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(contentType: contentType, upsert: false),
         )
         .timeout(const Duration(seconds: 60));
+    return path;
+  }
 
+  /// Makes the uploaded image the kiosk's active QR. Throws
+  /// [AdminRpcException] (e.g. PIN_WRONG, QR_COOLDOWN) when refused.
+  Future<KioskQr> activateQr({
+    required String imagePath,
+    required String accountName,
+    required String pin,
+  }) async {
+    final row = await callAdminRpc('set_active_qr', {
+      'p_image_path': imagePath,
+      'p_account_name': accountName.trim(),
+      'p_pin': pin,
+    }, timeout: _timeout);
+    return KioskQr.fromJson(row);
+  }
+
+  /// Best-effort removal of an upload that never became active.
+  Future<void> removeQrUpload(String path) async {
     try {
-      final row = await _client
-          .rpc(
-            'set_active_qr',
-            params: {
-              'p_image_path': path,
-              'p_account_name': accountName.trim(),
-            },
-          )
-          .timeout(_timeout);
-      return KioskQr.fromJson(Map<String, dynamic>.from(row as Map));
-    } catch (_) {
-      try {
-        await bucket.remove([path]);
-      } catch (_) {}
-      rethrow;
+      await _client.storage.from(assetsBucket).remove([path]).timeout(_timeout);
+    } catch (error) {
+      debugPrint('Could not remove unused QR upload: $error');
     }
   }
 
@@ -327,6 +361,8 @@ class CashlessService {
   // ---------------------------------------------------------------------------
 
   static String errorMessage(Object error) {
+    if (error is AdminRpcException) return error.userMessage;
+    if (error is PinCancelledException) return 'Cancelled.';
     if (error is AlreadyHandledException) {
       return 'Already handled by someone else or on the kiosk.';
     }

@@ -47,57 +47,6 @@ class _CountersScreenState extends State<CountersScreen> {
     }
   }
 
-  Future<void> _editCounter(TicketCounter counter) async {
-    final controller = TextEditingController(text: '${counter.lastSequence}');
-
-    final updated = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit ${counter.facilityCode} Counter'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Last sequence',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(context, int.tryParse(controller.text)),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (updated == null) {
-      return;
-    }
-
-    try {
-      await _supabaseService.updateTicketCounter(
-        counter.copyWith(lastSequence: updated),
-      );
-      await _loadCounters();
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to save counter: $error'),
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final usingDerivedCounters = _counters.any((counter) => counter.isDerived);
@@ -201,11 +150,6 @@ class _CountersScreenState extends State<CountersScreen> {
                   style: TextStyle(color: Colors.orange.shade700),
                 ),
             ],
-          ),
-          trailing: IconButton(
-            onPressed: counter.canEdit ? () => _editCounter(counter) : null,
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: counter.canEdit ? 'Edit counter' : 'Read-only counter',
           ),
         ),
       ),

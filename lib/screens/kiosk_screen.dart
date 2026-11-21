@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../models/facility.dart';
+import '../services/admin_rpc.dart';
 import '../services/cashless_service.dart';
 import '../services/facility_service.dart';
+import '../widgets/admin_pin_dialog.dart';
 import '../widgets/cashless_kiosk_cards.dart';
 import '../widgets/kiosk_widgets.dart';
 import 'facility_detail_screen.dart';
 
 /// Kiosk tab: QR payments switch, payment QR (admin only), and the
-/// facilities the kiosk sells and their prices.
+/// facilities the kiosk sells and their prices (editable by the admin with
+/// the admin PIN; read-only for staff).
 class KioskScreen extends StatefulWidget {
   const KioskScreen({super.key});
 
@@ -22,6 +25,9 @@ class _KioskScreenState extends State<KioskScreen> {
   List<Facility> _facilities = const [];
   bool _isLoading = true;
   String? _error;
+
+  /// Staff sees a read-only list; the database refuses their edits anyway.
+  bool get _isAdmin => CashlessService().isAdmin;
 
   @override
   void initState() {
@@ -50,14 +56,23 @@ class _KioskScreenState extends State<KioskScreen> {
     }
   }
 
-  Future<void> _runAction(
-    Future<void> Function() action,
+  /// Asks for the admin PIN, runs [action] with it, then reloads.
+  Future<void> _runPinAction(
+    String pinMessage,
+    Future<void> Function(String pin) action,
     String successMessage,
   ) async {
     try {
-      await action();
+      await runWithAdminPin<void>(
+        context,
+        title: 'Enter admin PIN',
+        message: pinMessage,
+        action: action,
+      );
       if (!mounted) return;
       showKioskSnack(context, successMessage);
+    } on PinCancelledException {
+      return;
     } catch (error) {
       if (!mounted) return;
       showKioskSnack(context, FacilityService.errorMessage(error), error: true);
@@ -93,8 +108,9 @@ class _KioskScreenState extends State<KioskScreen> {
 
   Future<void> _toggleActive(Facility facility) {
     final show = !facility.isActive;
-    return _runAction(
-      () => _service.setFacilityActive(facility.code, show),
+    return _runPinAction(
+      show ? 'Show ${facility.name} on the kiosk.' : 'Hide ${facility.name}.',
+      (pin) => _service.setFacilityActive(facility, show, pin),
       show ? '${facility.name} is now shown.' : '${facility.name} is hidden.',
     );
   }
@@ -130,8 +146,9 @@ class _KioskScreenState extends State<KioskScreen> {
     if (choice == 'hide') {
       await _toggleActive(facility);
     } else if (choice == 'delete') {
-      await _runAction(
-        () => _service.deleteFacility(facility.code),
+      await _runPinAction(
+        'Delete ${facility.name} and its categories.',
+        (pin) => _service.deleteFacility(facility.code, pin),
         '${facility.name} deleted.',
       );
     }
@@ -163,11 +180,13 @@ class _KioskScreenState extends State<KioskScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isLoading ? null : _addFacility,
-        icon: const Icon(Icons.add),
-        label: const Text('Add facility'),
-      ),
+      floatingActionButton: _isAdmin
+          ? FloatingActionButton.extended(
+              onPressed: _isLoading ? null : _addFacility,
+              icon: const Icon(Icons.add),
+              label: const Text('Add facility'),
+            )
+          : null,
       body: Column(
         children: [
           const KioskSyncNote(),
@@ -180,7 +199,7 @@ class _KioskScreenState extends State<KioskScreen> {
   }
 
   Widget _buildBody() {
-    final isAdmin = CashlessService().isAdmin;
+    final isAdmin = _isAdmin;
     final children = <Widget>[
       const QrPaymentsSwitchCard(),
       // Hidden entirely for the staff account (the database also refuses).
@@ -194,6 +213,7 @@ class _KioskScreenState extends State<KioskScreen> {
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
+      if (!isAdmin) const ViewOnlyNote(),
     ];
 
     if (_isLoading) {
@@ -222,7 +242,9 @@ class _KioskScreenState extends State<KioskScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Text(
-                'Tap "Add facility" to create the first one.',
+                isAdmin
+                    ? 'Tap "Add facility" to create the first one.'
+                    : 'The admin hasn\'t added any facilities yet.',
                 style: TextStyle(color: Colors.grey.shade500),
               ),
             ],
@@ -313,52 +335,54 @@ class _KioskScreenState extends State<KioskScreen> {
                 children: [ActiveBadge(isActive: facility.isActive)],
               ),
             ),
-            trailing: PopupMenuButton<String>(
-              tooltip: 'Actions',
-              onSelected: (value) {
-                switch (value) {
-                  case 'edit':
-                    _editFacility(facility);
-                  case 'toggle':
-                    _toggleActive(facility);
-                  case 'delete':
-                    _deleteFacility(facility);
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit_outlined),
-                    title: Text('Edit'),
+            trailing: !_isAdmin
+                ? const Icon(Icons.chevron_right)
+                : PopupMenuButton<String>(
+                    tooltip: 'Actions',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editFacility(facility);
+                        case 'toggle':
+                          _toggleActive(facility);
+                        case 'delete':
+                          _deleteFacility(facility);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Edit'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle',
+                        child: ListTile(
+                          leading: Icon(
+                            facility.isActive
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          title: Text(facility.isActive ? 'Hide' : 'Show'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.delete_outline,
+                            color: Colors.red.shade700,
+                          ),
+                          title: Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                PopupMenuItem(
-                  value: 'toggle',
-                  child: ListTile(
-                    leading: Icon(
-                      facility.isActive
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                    ),
-                    title: Text(facility.isActive ? 'Hide' : 'Show'),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.delete_outline,
-                      color: Colors.red.shade700,
-                    ),
-                    title: Text(
-                      'Delete',
-                      style: TextStyle(color: Colors.red.shade700),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -417,24 +441,36 @@ class _FacilityFormDialogState extends State<FacilityFormDialog> {
       _error = null;
     });
     final service = FacilityService();
+    final code = _codeController.text.trim();
+    final name = _nameController.text;
     try {
-      if (_isNew) {
-        await service.addFacility(
-          code: _codeController.text.trim(),
-          name: _nameController.text,
-          type: 'age_based',
-          firstCategoryLabel: _categoryLabelController.text,
-          firstCategoryPrice: FacilityService.parsePrice(
-            _categoryPriceController.text,
-          )!,
-        );
-      } else {
-        await service.updateFacility(
-          code: widget.facility!.code,
-          name: _nameController.text,
-        );
-      }
+      await runWithAdminPin<void>(
+        context,
+        title: 'Enter admin PIN',
+        message: _isNew ? 'Add facility $code.' : 'Save changes to $code.',
+        action: (pin) {
+          if (_isNew) {
+            return service.addFacility(
+              code: code,
+              name: name,
+              type: 'age_based',
+              firstCategoryLabel: _categoryLabelController.text,
+              firstCategoryPrice: FacilityService.parsePrice(
+                _categoryPriceController.text,
+              )!,
+              pin: pin,
+            );
+          }
+          return service.updateFacility(
+            facility: widget.facility!,
+            name: name,
+            pin: pin,
+          );
+        },
+      );
       if (mounted) Navigator.of(context).pop(true);
+    } on PinCancelledException {
+      if (mounted) setState(() => _saving = false);
     } catch (error) {
       if (!mounted) return;
       setState(() {
